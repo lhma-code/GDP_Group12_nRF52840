@@ -56,7 +56,7 @@ static struct bt_le_adv_param *adv_param = BT_LE_ADV_PARAM(
 #define PRIORITY 7
 
 #define RUN_LED_BLINK_INTERVAL 1000
-#define NOTIFY_INTERVAL 20 // Me: Notification interval
+#define NOTIFY_INTERVAL 20 // Me: Notification interval in miliseconds
 #define NRFX_SAADC_CHANNEL_COUNT 2 // Me: Number of SAADCs
 
 /* Advertising and Scan Data*/
