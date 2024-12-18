@@ -18,6 +18,7 @@
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/printk.h> // Extra to print out received data. Not logging
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
@@ -35,6 +36,26 @@ static void mylbsbc_ccc_mysensor_cfg_changed(const struct bt_gatt_attr *attr,uin
 	notify_mysensor_enabled = (value == BT_GATT_CCC_NOTIFY);
 }
 
+static uint8_t writable_value[20]; // Me: Buffer for the characteristic value
+static ssize_t received_app_data(struct bt_conn *conn, const struct bt_gatt_attr *attr, const void *buf, uint16_t len, uint16_t offset, uint8_t flags){
+	
+	
+	uint8_t *value = attr -> user_data;
+
+	if(offset + len > sizeof(writable_value)){
+		return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
+	}
+
+	memcpy(value + offset, buf, len);
+	printk("Characteristic written, new value: ");
+	for(int i=0; i<len; i++){
+		printk("%d", ((uint8_t *)buf)[i]);
+	}
+	printk("\n");
+
+	return len;
+}
+
 /* LED Button Service Declaration */
 BT_GATT_SERVICE_DEFINE(
 	my_lbs_svc, BT_GATT_PRIMARY_SERVICE(BT_UUID_LBS),
@@ -47,6 +68,8 @@ BT_GATT_SERVICE_DEFINE(
 	BT_GATT_CCC(mylbsbc_ccc_mysensor_cfg_changed,
 		    BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
 
+	/* Characteristic that receives the app data */
+	BT_GATT_CHARACTERISTIC(BT_UUID_APP_DATA, BT_GATT_CHRC_WRITE, BT_GATT_PERM_WRITE, NULL, received_app_data, writable_value),
 );
 
 

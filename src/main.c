@@ -74,6 +74,7 @@ LOG_MODULE_REGISTER(Group12_Test, LOG_LEVEL_DBG);
 /* BLE: variables and threading*/
 static uint16_t ble_tx_max_len; // Me: Self-defined, maximum transmission payload length
 static struct bt_gatt_exchange_params exchange_params;
+static bool mtu_exchanged; // Me: flag to know if the MTU has been exchanged before notifications can be sent
 static K_SEM_DEFINE(data_ready_sem, 0, 1);
 static const struct bt_data ad[] = { // Adverting data
 	BT_DATA(BT_DATA_NAME_COMPLETE, DEVICE_NAME, DEVICE_NAME_LEN),
@@ -671,7 +672,6 @@ void send_data_thread(void)
             for(int j=0; j<chunk_size; j++){
                 packet_data[j] = saadc_sample_buffer[saadc_current_buffer % 2][i+j];
             }
-
             my_lbs_send_sensor_notify(packet_data, sizeof(packet_data));
             k_sleep(K_MSEC(NOTIFY_INTERVAL));
         }
@@ -707,8 +707,7 @@ static void update_mtu(struct bt_conn *conn)
     }
 }
 /* Connection callback when a BLE connection is established */
-static void on_connected(struct bt_conn *conn, uint8_t err)
-{
+static void on_connected(struct bt_conn *conn, uint8_t err){
     // Me: Get the address of the BLE connection
     char addr[BT_ADDR_LE_STR_LEN];
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
@@ -733,8 +732,6 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 		return;
 	}
 
-	
-
 	/* Add the connection parameters to your log */
 	double connection_interval = info.le.interval*1.25; // in ms
 	uint16_t supervision_timeout = info.le.timeout*10; // in ms
@@ -744,8 +741,10 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
 	update_data_length(conn); // Previously my_conn
 	update_mtu(conn); // Previously my_conn
 
+	mtu_exchanged = false;
+
     // Me: Advertise only if the number of connection is less than the max allowable
-    if (conn_cnt < CONFIG_BT_MAX_CONN) {
+    if (conn_cnt < 2) { // Test: previously CONFIG_BT_MAX_CONN
 		advertising_start();
 	}
 
@@ -780,7 +779,7 @@ void on_le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t laten
     uint16_t supervision_timeout = timeout*10;          // in ms
     LOG_INF("Connection parameters updated: interval %.2f ms, latency %d intervals, timeout %d ms", connection_interval, latency, supervision_timeout);
 }
-/* Callback for data length updates*/
+/* Callback for data length updates */
 void on_le_data_len_updated(struct bt_conn *conn, struct bt_conn_le_data_len_info *info)
 {
     uint16_t tx_len     = info->tx_max_len; 
@@ -789,7 +788,7 @@ void on_le_data_len_updated(struct bt_conn *conn, struct bt_conn_le_data_len_inf
     uint16_t rx_time    = info->rx_max_time;
     LOG_INF("Data length updated. Length %d/%d bytes, time %d/%d us", tx_len, rx_len, tx_time, rx_time);
 }
-/* Structure holding all connection-related callbacks*/
+/* Structure holding all connection-related callbacks */
 struct bt_conn_cb connection_callbacks = {
 	.connected = on_connected,
 	.disconnected = on_disconnected,
@@ -810,6 +809,7 @@ static void exchange_func(struct bt_conn *conn, uint8_t att_err, struct bt_gatt_
 
         ble_tx_max_len = payload_mtu; // Me: Let it be globally known payload length
     }
+	mtu_exchanged = true;
 }
 
 
@@ -914,7 +914,8 @@ static void saadc_event_handler(nrfx_saadc_evt_t const * p_event)
             //LOG_INF("Channel 1: AVG=%d, MIN=%d, MAX=%d", (int16_t)average_AIN1, min_AIN1, max_AIN1);
             //LOG_INF("First=%d", ((int16_t *)(p_event->data.done.p_buffer))[0]);
 
-            k_sem_give(&data_ready_sem);
+			if(mtu_exchanged)
+            	k_sem_give(&data_ready_sem);
 
             break;
 

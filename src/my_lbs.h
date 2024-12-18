@@ -24,10 +24,12 @@ extern "C" {
 #define BT_UUID_LBS BT_UUID_DECLARE_128(BT_UUID_LBS_VAL)
 
 /* Assign a UUID to the MYSENSOR characteristic */
-/** @brief LED Characteristic UUID. */
 #define BT_UUID_LBS_MYSENSOR_VAL BT_UUID_128_ENCODE(0xa5c298c1,0xa235,0x4a32,0xa4e9,0x5b42f6bd50e5)
-/* Convert the array to a generic UUID */
 #define BT_UUID_LBS_MYSENSOR BT_UUID_DECLARE_128(BT_UUID_LBS_MYSENSOR_VAL)
+
+/** @brief App data Characteristic UUID. */
+#define BT_UUID_APP_DATA_VAL BT_UUID_128_ENCODE(0xa5c298c2,0xa235,0x4a32,0xa4e9,0x5b42f6bd50e5)
+#define BT_UUID_APP_DATA BT_UUID_DECLARE_128(BT_UUID_APP_DATA_VAL)
 
 /** @brief Send the sensor value as notification.
  *
