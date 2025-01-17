@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
+/* This code is an amalgamation of three sample codes provided by Nordic Semiconductor: 
+	1) blefund_less4_exer2
+	2) inter_less6_exer3
+	3) peripheral_nfc_pairing
+*/
+
 /* All libraries for the BLE, Logging, LBS*/
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -45,9 +51,9 @@ LOG_MODULE_REGISTER(Group12_Test, LOG_LEVEL_DBG);
 
 
 /* Fixed SAADC Macros */
-#define SAADC_SAMPLE_INTERVAL_US 500 // Define the SAADC sample interval in microseconds
-#define SAADC_BUFFER_SIZE 4000 // Define the SAADC buffer size for the SAADC
-#define NRFX_SAADC_CHANNEL_COUNT 2 // Me: Number of SAADCs
+#define SAADC_SAMPLE_INTERVAL_US 5000 // Define the SAADC sample interval in microseconds
+#define SAADC_BUFFER_SIZE 400 // Define the SAADC buffer size for the SAADC
+#define NRFX_SAADC_CHANNEL_COUNT 1 // Me: Number of SAADCs
 
 /* Fixed BLE Macros*/
 #define DEVICE_NAME CONFIG_BT_DEVICE_NAME
@@ -687,7 +693,7 @@ static void update_data_length(struct bt_conn *conn)
 {
     int err;
     struct bt_conn_le_data_len_param my_data_len = {
-        .tx_max_len = BT_GAP_DATA_LEN_MAX, // Me: 251 bytes 
+        .tx_max_len = 200 + 3, // Me: Previously BT_GAP_DATA_LEN_MAX = 251 bytes 
         .tx_max_time = BT_GAP_DATA_TIME_MAX, // Me: 17040 us
     };
     err = bt_conn_le_data_len_update(conn, &my_data_len); // Previously my_conn
@@ -735,7 +741,8 @@ static void on_connected(struct bt_conn *conn, uint8_t err){
 	/* Add the connection parameters to your log */
 	double connection_interval = info.le.interval*1.25; // in ms
 	uint16_t supervision_timeout = info.le.timeout*10; // in ms
-	LOG_INF("Connection parameters: interval %.2f ms, latency %d intervals, timeout %d ms", connection_interval, info.le.latency, supervision_timeout);
+	int connection_interval_int = (int)(connection_interval*100);
+	LOG_INF("X:Connection parameters: interval %d.%d ms, latency %d intervals, timeout %d ms", connection_interval_int/100, connection_interval_int%100, info.le.latency, supervision_timeout);
 
     /* Update the data length and MTU */
 	update_data_length(conn); // Previously my_conn
@@ -777,7 +784,9 @@ void on_le_param_updated(struct bt_conn *conn, uint16_t interval, uint16_t laten
 {
     double connection_interval = interval*1.25;         // in ms
     uint16_t supervision_timeout = timeout*10;          // in ms
-    LOG_INF("Connection parameters updated: interval %.2f ms, latency %d intervals, timeout %d ms", connection_interval, latency, supervision_timeout);
+	int connection_interval_int = (int)(connection_interval*100);
+    LOG_INF("Connection parameters updated: interval %d.%d ms, latency %d intervals, timeout %d ms", connection_interval_int/100, connection_interval_int%100, latency, supervision_timeout);
+	
 }
 /* Callback for data length updates */
 void on_le_data_len_updated(struct bt_conn *conn, struct bt_conn_le_data_len_info *info)
@@ -813,13 +822,8 @@ static void exchange_func(struct bt_conn *conn, uint8_t att_err, struct bt_gatt_
 }
 
 
-/* SAADC Functions and channel structure*/
+/* SAADC Functions*/
 
-/* Structure that holds the SAADC channels and their configuration */
-static nrfx_saadc_channel_t multiple_channels[] = {
-    NRFX_SAADC_DEFAULT_CHANNEL_DIFFERENTIAL(NRF_SAADC_INPUT_AIN0, NRF_SAADC_INPUT_AIN1, 0),
-    NRFX_SAADC_DEFAULT_CHANNEL_DIFFERENTIAL(NRF_SAADC_INPUT_AIN2, NRF_SAADC_INPUT_AIN4, 1)
-};
 /* Configure the timer used for the sampling */
 static void configure_timer(void)
 {
@@ -868,10 +872,6 @@ static void saadc_event_handler(nrfx_saadc_evt_t const * p_event)
             int16_t max_AIN0 = INT16_MIN;
             int16_t min_AIN0 = INT16_MAX;
 
-            int64_t average_AIN1 = 0;
-            int16_t max_AIN1 = INT16_MIN;
-            int16_t min_AIN1 = INT16_MAX;
-
             int16_t current_value;
 
             // Data in the buffer is interleaved for the channels
@@ -887,27 +887,9 @@ static void saadc_event_handler(nrfx_saadc_evt_t const * p_event)
                 if (current_value < min_AIN0) {
                     min_AIN0 = current_value;
                 }
-
-                // Channel 1 value
-                i++;
-
-                // First value in the buffer
-                current_value = ((int16_t *)(p_event->data.done.p_buffer))[i];
-
-                average_AIN1 += current_value;
-                if (current_value > max_AIN1) {
-                    max_AIN1 = current_value;
-                }
-                if (current_value < min_AIN1) {
-                    min_AIN1 = current_value;
-                }
-
             }
 
             average_AIN0 = average_AIN0 / (p_event->data.done.size/NRFX_SAADC_CHANNEL_COUNT);
-
-            average_AIN1 = average_AIN1 / (p_event->data.done.size/NRFX_SAADC_CHANNEL_COUNT);
-
 
             //LOG_INF("SAADC buffer at 0x%x filled with %d samples", (uint32_t)p_event->data.done.p_buffer, p_event->data.done.size);
             //LOG_INF("Channel 0: AVG=%d, MIN=%d, MAX=%d", (int16_t)average_AIN0, min_AIN0, max_AIN0);
@@ -943,24 +925,22 @@ static void configure_saadc(void)
     }
 
     /* Change gain config in default config and apply channel configuration */
-    multiple_channels[0].channel_config.gain = NRF_SAADC_GAIN1_6;
-    multiple_channels[1].channel_config.gain = NRF_SAADC_GAIN1_6;
+	nrfx_saadc_channel_t channel = NRFX_SAADC_DEFAULT_CHANNEL_DIFFERENTIAL(NRF_SAADC_INPUT_AIN0, NRF_SAADC_INPUT_AIN1, 0);
+	channel.channel_config.gain = NRF_SAADC_GAIN1_6;
 
-    err = nrfx_saadc_channels_config(&multiple_channels, NRFX_SAADC_CHANNEL_COUNT);
+    err = nrfx_saadc_channels_config(&channel, NRFX_SAADC_CHANNEL_COUNT);
     if (err != NRFX_SUCCESS) {
         LOG_ERR("nrfx_saadc_channels_config error: %08x", err);
         return;
     }
 
-    uint32_t channels_mask = nrfx_saadc_channels_configured_get();
-
     /* Configure channel in advanced mode with event handler (non-blocking mode) */
     nrfx_saadc_adv_config_t saadc_adv_config = NRFX_SAADC_DEFAULT_ADV_CONFIG;
-
-    err = nrfx_saadc_advanced_mode_set(channels_mask, // Me: Enable channel  1 and 0 with the mask
+    err = nrfx_saadc_advanced_mode_set(BIT(0), // Me: Enable channel 0
                                     NRF_SAADC_RESOLUTION_12BIT,
                                     &saadc_adv_config,
                                     saadc_event_handler);
+
     if (err != NRFX_SUCCESS) {
         LOG_ERR("nrfx_saadc_advanced_mode_set error: %08x", err);
         return;
